@@ -55,43 +55,26 @@ in at least 4 of 5 tries.
 
 ---
 
-## 4. Something about your chunks
+## 4. One chunk per document
 
-<!-- YOU WRITE THIS ONE.
-
-     How would you know if your chunks were the right size? Name something
-     countable or observable.
-
-     Examples of the right shape — don't copy these, they should come from
-     what you actually saw in Milestone 3:
-       - "At least 4 of 5 sampled chunks read as a complete thought, with no
-          sentence cut in half at either end."
-       - "No chunk is shorter than 200 characters, since anything below that
-          in my corpus turned out to be a heading with no content under it." -->
-
-
+There are exactly 88 chunks, one for each document.
 
 **Why this target:**
-
-
+Every document is shorter than my 800-character chunk size, so none of them
+should get split. More than 88 chunks means something is cutting documents in
+half.
 
 ---
 
-## 5. Your choice
+## 5. Answers cite the right document
 
-<!-- YOU WRITE THIS ONE TOO.
-
-     Pick something you actually care about getting right. It could be about
-     speed, about refusals, about a particular kind of question your corpus
-     handles badly, about source attribution being correct rather than merely
-     present — anything, as long as it names a number or an observable
-     outcome. -->
-
-
+For at least 4 of my 5 test questions, the cited source is the document that
+actually has the answer.
 
 **Why this target:**
-
-
+Many documents look alike (for example, the seven housing noise posts), so the
+system could easily cite the wrong one. Not 5 of 5 because some of my questions
+have no matching document at all.
 
 ---
 
