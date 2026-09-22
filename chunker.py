@@ -22,6 +22,7 @@ to it, write down what you saw, and move on. That's a real observation about
 your pipeline, not giving up.
 """
 
+import re
 from dataclasses import dataclass
 
 import config
@@ -80,24 +81,102 @@ def fallback_split(
     return chunks
 
 
+def _split_sentences(paragraph: str, limit: int) -> list[str]:
+    """Break one over-long paragraph into pieces at sentence ends."""
+    sentences = re.split(r"(?<=[.!?])\s+", paragraph)
+    pieces: list[str] = []
+    current = ""
+    for sentence in sentences:
+        if current and len(current) + 1 + len(sentence) > limit:
+            pieces.append(current)
+            current = sentence
+        else:
+            current = f"{current} {sentence}".strip()
+    if current:
+        pieces.append(current)
+    return pieces
+
+
+def _is_heading(paragraph: str) -> bool:
+    """A markdown heading, or a short plain-text line like "Making the game shorter"."""
+    if paragraph.startswith("#"):
+        return True
+    return (
+        "\n" not in paragraph
+        and len(paragraph) < 80
+        and not paragraph.startswith("-")
+        and not paragraph.endswith((".", "!", "?", ":", ")"))
+    )
+
+
 def split_documents(documents: list[Document]) -> list[Chunk]:
     """
-    Split documents into chunks. ⚠️ REPLACE THE BODY OF THIS IN MILESTONE 3.
+    Split documents on paragraph breaks instead of character counts.
 
-    Right now it just calls the fallback. That is the plain, generic behaviour
-    the brief is talking about.
+    A document that fits in CHUNK_SIZE stays whole — every campus_life post
+    does, so that corpus still comes out as one chunk per document. Longer
+    documents are packed paragraph by paragraph, a heading (`## ...`, or a
+    short plain-text line with no full stop) always starts a new chunk, and only a single paragraph longer than CHUNK_SIZE is
+    cut, at sentence ends. No sentence is ever split in half.
 
-    When you write your own strategy, set `produced_by` to
-    "chunker.py::split_documents" so your README's Sample Chunks section names
-    the right function. `app.py chunks` prints that string for you.
-
-    Things worth thinking about before you write any code:
-      - Are your documents short posts or long guides?
-      - Is the useful information in one sentence, or spread over a paragraph?
-      - Would splitting on paragraph breaks keep more thoughts intact than
-        splitting on a character count?
+    Every chunk after a document's first starts with the document's title line
+    (and its section heading, if any), so it still says what it's about when
+    it's retrieved on its own. That replaces the fallback's character overlap.
     """
-    return fallback_split(documents)
+    limit = config.CHUNK_SIZE
+    chunks: list[Chunk] = []
+
+    for doc in documents:
+        text = doc.text.strip()
+        if not text:
+            continue
+
+        paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+        title = paragraphs[0] if len(paragraphs[0]) < 120 else ""
+
+        pieces: list[str] = []
+        heading = ""
+        current: list[str] = []
+        has_body = False   # a chunk made of only title/heading lines isn't worth keeping
+
+        def flush() -> None:
+            nonlocal has_body
+            if has_body:
+                pieces.append("\n\n".join(current))
+                current.clear()
+                has_body = False
+
+        if len(text) <= limit:
+            pieces = [text]
+        else:
+            for paragraph in paragraphs[1 if title else 0 :]:
+                if _is_heading(paragraph):
+                    flush()
+                    heading = paragraph
+                    current[:] = [p for p in (title, heading) if p]
+                    continue
+
+                for part in _split_sentences(paragraph, limit):
+                    size = sum(len(p) + 2 for p in current) + len(part)
+                    if has_body and size > limit:
+                        flush()
+                    if not current:
+                        current.extend(p for p in (title, heading) if p)
+                    current.append(part)
+                    has_body = True
+            flush()
+
+        for index, piece in enumerate(pieces):
+            chunks.append(
+                Chunk(
+                    text=piece,
+                    source=doc.source,
+                    index=index,
+                    produced_by="chunker.py::split_documents",
+                )
+            )
+
+    return chunks
 
 
 def describe(chunks: list[Chunk]) -> str:
