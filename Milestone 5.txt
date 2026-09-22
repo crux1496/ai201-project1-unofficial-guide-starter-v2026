@@ -1,0 +1,187 @@
+======================================================================
+MILESTONE 5: WRITE IT UP AND SUBMIT
+======================================================================
+
+Scope as given: complete the two outstanding README sections (What This Does,
+How I Used AI), verify the repository against the submission checklist, and
+push to the fork.
+
+Two further sections required work that the milestone did not anticipate.
+Sample Chunks still contained a chunk drawn from advice_threads and attributed
+to fallback_split, and Chunking Strategy was empty. Both predate the switch to
+city_guides and the replacement of the chunker, so both were rewritten against
+the current state of the system rather than left as artefacts of an earlier
+one.
+
+======================================================================
+WHAT THIS DOES
+======================================================================
+
+Characterises the system as a retrieval-augmented generation pipeline rather
+than describing it procedurally: corpus composition (14 guides, ~29.5 KB of
+markdown, 96 indexed chunks), the embedding and retrieval configuration
+(all-MiniLM-L6-v2 under cosine distance, k=5, Chroma), and the generation
+step's constraint to the retrieved evidence.
+
+States the query class the system targets -- factual, locally scoped, with a
+unique answering section -- and the design position that the pipeline fails
+closed: out-of-corpus queries are rejected on a distance threshold before
+generation, trading recall for precision on the argument that an unsupported
+answer costs more than a refusal.
+
+======================================================================
+CHUNKING STRATEGY
+======================================================================
+
+Chunk size: 800 characters, as a packing ceiling rather than a target width
+Overlap:    none -- superseded by a propagated title and section header
+
+Argument recorded: this corpus carries explicit structural markup that already
+encodes its semantic boundaries. Each guide is partitioned under ## headings
+into topically independent sections; the length distribution is tight, with a
+maximum document of 2,547 characters and a maximum section near 600. Fixed-
+width windowing therefore imposes an arbitrary partition over text that
+already has a principled one.
+
+The 800-character bound is retained as a guard for corpora with different
+length characteristics. It does not fire on city_guides, so the mapping is
+effectively one chunk per section; where it does fire, the split is taken at a
+sentence boundary.
+
+Overlap was eliminated rather than tuned. Its failure mode -- an answer lost
+across a boundary -- presupposes boundaries placed without regard to content.
+The residual risk once boundaries follow sections is different in kind: a
+retrieved chunk that cannot identify its own subject, since "## Where to stay"
+is near-identical across all ten town guides in isolation. A propagated header
+addresses that at roughly 30 characters of overhead against the 120 the
+overlap consumed.
+
+One revision is documented: the boundary predicate initially matched markdown
+## only, which degrades silently on plain-text corpora. Validation against
+practice surfaced chunks terminating on an orphaned heading line, and the
+predicate was generalised to admit short unpunctuated single-line paragraphs.
+
+======================================================================
+SAMPLE CHUNKS
+======================================================================
+
+Stale advice_threads content replaced with five chunks sampled across the
+current index:
+
+    Chunk 1   guide_accessibility.md#0        chunker.py::split_documents
+    Chunk 2   guide_corry_vale.md#5           chunker.py::split_documents
+    Chunk 3   guide_givens_mill.md#2          chunker.py::split_documents
+    Chunk 4   guide_kestrelford.md#5          chunker.py::split_documents
+    Chunk 5   guide_regional_transport.md#0   chunker.py::split_documents
+
+$ python app.py chunks -n 5
+96 chunks total. Showing 5, spread across the corpus.
+
+The attribution on each is the function that emitted it; the rubric checks
+this claim against the source, so it is generated output rather than a
+hand-written label.
+
+======================================================================
+HOW I USED AI
+======================================================================
+
+Two interactions, each recorded as request / response / intervention.
+
+1. Implementing the boundary-aware chunker. The returned design was sound --
+   paragraph packing with heading-triggered flushes -- but the initial
+   implementation carried two defects observable only in its output: chunks
+   containing a heading and no body, and loss of the heading on the chunk
+   following a flush, leaving section continuations unidentifiable. Common
+   root cause: the buffer was flushed on encountering a heading without
+   testing whether it yet held body content. A third defect surfaced under
+   validation against a corpus it was not developed on (practice, plain-text
+   headings).
+
+   The transferable observation, recorded in the README: the failure surface
+   was the data, not the control flow. Each defect was invisible under code
+   review and immediate on inspection of emitted chunks, which argues for
+   treating output inspection as the primary verification step for this class
+   of component.
+
+2. Specifying acceptance criteria 4 and 5. The substantive intervention was a
+   factual error in the draft -- chunk count asserted as 92 against an actual
+   88 documents -- detected on verification against the filesystem. Recorded
+   because criterion 4 derives its value from being mechanically checkable: a
+   criterion parameterised by a wrong constant fails for reasons orthogonal to
+   pipeline behaviour, which is the exact failure mode acceptance criteria
+   exist to exclude. The same pass surfaced a corpus inconsistency across
+   config.py, questions.py and the Milestone 3 output.
+
+======================================================================
+CRITERIA CORRECTED
+======================================================================
+
+Criteria 4 and 5 were drafted while the project still pointed at campus_life
+and did not survive the switch to city_guides. Criterion 4 asserted "exactly
+88 chunks, one per document", which is a true structural consequence for
+campus_life (88 short documents, none reaching the size bound) and false for
+city_guides (14 documents, 96 chunks, splitting by design). A criterion that
+is false by construction measures nothing.
+
+Restated against the current corpus and verified:
+
+    chunks 96 | mid-sentence 0 | no title 0
+
+Criterion 4 now asserts section-granular self-containment -- no chunk
+terminating mid-sentence, and every chunk carrying the title identifying its
+subject -- both holding for 96 of 96. Criterion 5 is unchanged in substance
+but re-argued from this corpus: attribution can be wrong while looking right,
+because all ten town guides share a section schema.
+
+Reasons were also written for criteria 1 to 3, which had targets but no
+justification. Criterion 1 predicts in advance which query will miss and why
+(Kestrelford Sunday transport, answering chunk at rank 10, outranked by
+sections with higher lexical overlap). Criterion 3 records the measured class
+separation and explains why 4 of 5 is deliberately slack given that the
+negatives sample the easy tail.
+
+======================================================================
+REPOSITORY CHECK
+======================================================================
+
+criteria.md -- five numbered criteria, each with a target and a reason:
+
+20:## 1. Retrieved chunks contain the answer
+36:## 2. Every answer names a source
+51:## 3. The relevance gate stops out-of-corpus questions
+74:## 4. Chunks are self-contained at section granularity
+92:## 5. Source attribution is correct, not merely present
+
+README.md -- five sections, no unfilled placeholders:
+
+    ## What This Does
+    ## Chunking Strategy
+    ## Sample Chunks
+    ## Sample Answer
+    ## How I Used AI
+
+Commits -- the starter arrived with its own history; these are the ones added
+in this unit:
+
+dc3808b Keep the milestone 3 and 4 run output
+bd41fcf Fill in all five README sections
+5e58364 Point the project at city_guides and rewrite the test questions
+a2cf445 Split on headings and paragraphs instead of fixed windows
+ee1d64d Add criteria 4 and 5: one chunk per document, cite the right source
+
+$ python tools/smoke_test.py
+All checks passed.
+
+======================================================================
+SUBMIT
+======================================================================
+
+Fork: https://github.com/crux1496/ai201-project1-unofficial-guide-starter-v2026
+
+This URL goes to the Course Portal -- the fork, not the CodePath starter.
+
+Recorded for unit 2, which submits the same repository. Deleting and
+recreating it discards the commit history that evidences the work if a grade
+is disputed.
+
+All README content is pasted text. No screenshots.

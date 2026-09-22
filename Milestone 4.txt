@@ -1,0 +1,268 @@
+======================================================================
+MILESTONE 4: TUNE RETRIEVAL AND GROUND THE ANSWERS
+======================================================================
+
+Corpus: city_guides (14 guides, 96 chunks, chunker.py::split_documents)
+
+Three jobs:
+  1. Check that retrieval brings back chunks that relate to the question
+  2. Decide when it hasn't, and stop
+  3. Make the model answer from those chunks, not from what it already knows
+
+======================================================================
+JOB 1  |  THREE QUESTIONS THROUGH RETRIEVAL
+======================================================================
+
+The five test questions in questions.py were rewritten first. The old ones
+were about campus_life (meal plans, library hours) and could never have been
+answered from a set of travel guides.
+
+$ python app.py retrieve "How do I get to Kestrelford on a Sunday?"
+
+Question: How do I get to Kestrelford on a Sunday?
+
+#   distance   source                     
+------------------------------------------
+1   0.3695     guide_kestrelford.md             
+2   0.3704     guide_kestrelford.md             
+3   0.3705     guide_kestrelford.md             
+4   0.3852     guide_kestrelford.md             
+5   0.4183     guide_regional_transport.md
+
+Gate: best distance 0.369 is under the 0.6 cutoff
+
+Lower is better. 0.3 is a close match, 0.9 is unrelated.
+Milestone 4: run your five questions, then the five in OUT_OF_SCOPE
+that your documents clearly don't cover, and look for the gap
+between the two groups. Your cutoff goes in that gap.
+
+Read the chunks: all four top hits are from the right document and all four
+are the wrong section. The chunk that answers this -- "## Getting there", the
+one that says buses run "not at all on Sundays" -- came back TENTH at 0.4749.
+The sections that beat it talk about Saturday markets and opening days, so
+they share more words with the question than the answer does.
+
+Checked whether my chunker's title prefix caused it by indexing two
+comparison variants: one with the "# Kestrelford / ## Heading" prefix
+stripped, one built with the old fallback_split. Neither put the right chunk
+in the top 5 either. So it is not the chunking. The embedding model just does
+not connect this question to its answer.
+
+top-k stays at 5. Raising it to 10 would catch this one question and bury the
+other four in loosely related material -- they already land their answer at
+rank 1 or 2. Criterion 1 asks for 4 of 5, and 4 of 5 is what this is.
+
+$ python app.py retrieve "Why does the road to Elder Ness flood?"
+
+Question: Why does the road to Elder Ness flood?
+
+#   distance   source                
+-------------------------------------
+1   0.3460     guide_elder_ness.md   
+2   0.3805     guide_elder_ness.md   
+3   0.4150     guide_elder_ness.md   
+4   0.4530     guide_elder_ness.md   
+5   0.4632     guide_elder_ness.md   
+
+Gate: best distance 0.346 is under the 0.6 cutoff
+
+Lower is better. 0.3 is a close match, 0.9 is unrelated.
+Milestone 4: run your five questions, then the five in OUT_OF_SCOPE
+that your documents clearly don't cover, and look for the gap
+between the two groups. Your cutoff goes in that gap.
+
+$ python app.py retrieve "How often do the trams run in Marchwood?"
+
+Question: How often do the trams run in Marchwood?
+
+#   distance   source                
+-------------------------------------
+1   0.2442     guide_marchwood.md    
+2   0.4224     guide_marchwood.md    
+3   0.4473     guide_eating.md       
+4   0.4475     guide_marchwood.md    
+5   0.4736     guide_accessibility.md
+
+Gate: best distance 0.244 is under the 0.6 cutoff
+
+Lower is better. 0.3 is a close match, 0.9 is unrelated.
+Milestone 4: run your five questions, then the five in OUT_OF_SCOPE
+that your documents clearly don't cover, and look for the gap
+between the two groups. Your cutoff goes in that gap.
+
+======================================================================
+JOB 2  |  SET THE RELEVANCE CUTOFF
+======================================================================
+
+All five questions the corpus covers, then the five in OUT_OF_SCOPE that it
+clearly doesn't. Best distance for each, and where the answering chunk
+ranked.
+
+   best  rank of answer  question
+ 0.3695              10  How do I get to Kestrelford on a Sunday?
+ 0.3678               1  Can I eat late in the evening in Kestrelford?
+ 0.3460               2  Why does the road to Elder Ness flood?
+ 0.2442               1  How often do the trams run in Marchwood?
+ 0.4192               1  Which towns in the region are easiest with limited mobility?
+
+ 0.8026                  What is the capital of Mongolia?
+ 0.8881                  How do I change the oil in a diesel engine?
+ 0.9753                  Who won the 1994 World Cup?
+ 0.8350                  What is the recommended dosage of ibuprofen for a headache?
+ 0.8365                  How do I write a for loop in Rust?
+
+in-scope   0.2442 to 0.4192
+out-scope  0.8026 to 0.9753
+gap        0.4192 .. 0.8026  (midpoint 0.611)
+
+Two groups, with a gap of nearly four tenths and nothing in it:
+
+    in corpus       0.2442  to  0.4192
+    out of corpus   0.8026  to  0.9753
+
+CUTOFF: 0.6 -- the starter default, kept rather than changed. Any number
+between about 0.45 and 0.80 behaves identically on these ten questions, so
+0.6 sits near the middle of the gap with room on both sides.
+
+What both directions would cost:
+    too low  (0.3)   refuses all five questions it had the answer to
+    too high (0.9)   never refuses anything, including the World Cup
+
+The gap is this wide because the out-of-scope questions come from a
+completely different world: engines, football, Rust. A question about a
+nearby town these guides don't happen to cover would land much closer to the
+line, and that has not been tested.
+
+======================================================================
+JOB 3  |  GROUND THE ANSWERS
+======================================================================
+
+GROUNDING_INSTRUCTION in generate.py, as it already ships:
+
+    You answer questions using only the documents provided to you.
+
+    Rules:
+    - Use only the information in the documents below. Do not use anything
+      you know from elsewhere.
+    - If the documents don't cover the question, say you don't have enough
+      information. Do not guess.
+    - Name the document your answer came from, using the filename given in
+      each excerpt.
+    - Be brief. Two or three sentences is usually enough.
+
+Left as-is. It already demands a filename and forbids outside knowledge, and
+the answers below don't drift past their sources.
+
+$ python app.py ask "How often do the trams run in Marchwood?"
+
+  (best distance 0.244, cutoff 0.6)
+
+In Marchwood, the tram network runs every 8 minutes on weekdays and every 15 minutes at weekends (source: `guide_marchwood.md`).
+
+Sources retrieved: guide_accessibility.md, guide_eating.md, guide_marchwood.md
+
+0 model calls this session, 1 served from cache
+
+Grounded: the number is in guide_marchwood.md and the answer names the file.
+Not grounded would be something like "Marchwood's trams run every few minutes
+like most city networks" -- sounds right, cites nothing, came out of the
+model's training data.
+
+The gate refusing an out-of-corpus question, before the model is called:
+
+$ python app.py ask "Who won the 1994 World Cup?"
+
+  (best distance 0.975, cutoff 0.6)
+
+I don't have enough information about that.
+
+0 model calls this session
+
+0 model calls. A refusal never reaches the model.
+
+$ python app.py ask "How often do the trams run in Marchwood?" --show-prompt
+
+  (best distance 0.244, cutoff 0.6)
+
+======================================================================
+System instruction sent with the prompt
+======================================================================
+You answer questions using only the documents provided to you.
+
+Rules:
+- Use only the information in the documents below. Do not use anything you know from elsewhere.
+- If the documents don't cover the question, say you don't have enough information. Do not guess.
+- Name the document your answer came from, using the filename given in each excerpt.
+- Be brief. Two or three sentences is usually enough.
+
+======================================================================
+The assembled prompt, exactly as sent
+======================================================================
+Documents:
+
+[from guide_marchwood.md]
+# Marchwood
+
+## Getting around
+
+A tram network of four lines, running every 8 minutes on weekdays and every 15 at weekends, until midnight. A day ticket costs less than two single fares and nobody tells you this at the machine. The centre is walkable but the interesting districts are not adjacent to each other.
+
+[from guide_marchwood.md]
+# Marchwood
+
+## Eat and drink
+
+The best eating is in the Northgate district, a 12-minute tram ride from the station, where about thirty restaurants sit within four streets. The area immediately around the station is uniformly poor and expensive. Marchwood keeps later hours than anywhere else in the region — kitchens serve until 10:30pm, and until midnight on Fridays and Saturdays.
+
+[from guide_eating.md]
+# Eating across the region
+
+## The pattern worth knowing
+
+Marchwood is the exception, in that the good district — Northgate — is a tram
+ride away rather than a street away, and the station area is uniformly poor.
+
+[from guide_marchwood.md]
+# Marchwood
+
+## Getting there
+
+Every railway line in the region meets here, which is the city's defining feature. Trains to Brightwater run every 40 minutes until 11pm. The airport is 20 minutes out by a dedicated bus that runs every 15 minutes and costs more than the equivalent taxi shared between three people.
+
+[from guide_accessibility.md]
+# Getting around the region with limited mobility
+
+## Straightforward
+
+**Thornby Wells** is the easiest town in the region. It is flat, compact, and
+everything is within three minutes of everything else. Parking is free for two
+hours anywhere in town and the station is central. The pump room and gardens
+are level throughout.
+
+**Marchwood** has a modern tram network with level boarding on all four lines,
+running every 8 minutes on weekdays. The city museum and covered market are both
+step-free. The distances between districts are the main consideration.
+
+---
+
+Question: How often do the trams run in Marchwood?
+
+Answer using only the documents above, and name the file you used.
+======================================================================
+
+In Marchwood, the tram network runs every 8 minutes on weekdays and every 15 minutes at weekends (source: `guide_marchwood.md`).
+
+Sources retrieved: guide_accessibility.md, guide_eating.md, guide_marchwood.md
+
+0 model calls this session, 1 served from cache
+
+======================================================================
+WHAT WENT INTO THE README
+======================================================================
+
+  Sample Answer          the Marchwood question and answer, source line visible
+  My relevance cutoff    0.6, and what the two groups looked like
+  Distance table         all ten rows, in corpus and out
+
+Unchanged in config.py: THRESHOLD = 0.6, TOP_K = 5. Both were measured, and
+both were kept.
